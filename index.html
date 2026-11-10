@@ -3,28 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Timeline & Distance Tracker (Fixed)</title>
+    <title>GPS Realtime Timeline Tracker (Fixed Accuracy)</title>
     
     <!-- Leaflet.js CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { display: flex; flex-direction: column; height: 100vh; background-color: #f4f6f9; }
         #map { flex: 1; width: 100%; z-index: 1; }
         .control-panel { background: #ffffff; padding: 15px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
         .stat-card { background: #eef2f7; padding: 8px; border-radius: 8px; }
-        .stat-card span { display: block; font-size: 11px; color: #666; }
-        .stat-card strong { font-size: 15px; color: #2c3e50; }
-        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
-        button { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; min-width: 120px; }
+        .stat-card span { display: block; font-size: 10px; color: #666; font-weight: bold; }
+        .stat-card strong { font-size: 14px; color: #2c3e50; }
+        .btn-group { display: flex; gap: 8px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         .btn-start { background: #2ecc71; color: white; }
         .btn-stop { background: #e74c3c; color: white; }
         .btn-fix { background: #3498db; color: white; }
-        .btn-sim { background: #9b59b6; color: white; }
         button:disabled { background: #ccc; cursor: not-allowed; }
-        #errorLog { color: #e74c3c; font-size: 12px; text-align: center; font-weight: bold; }
+        #errorLog { color: #e74c3c; font-size: 11px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -35,24 +34,27 @@
         <div id="errorLog"></div>
         <div class="stats-grid">
             <div class="stat-card">
-                <span>TOTAL JARAK</span>
+                <span>JARAK</span>
                 <strong id="totalDistance">0.00 km</strong>
             </div>
             <div class="stat-card">
-                <span>TITIK REKAM</span>
+                <span>AKURASI</span>
+                <strong id="gpsAccuracy">0 m</strong>
+            </div>
+            <div class="stat-card">
+                <span>TITIK</span>
                 <strong id="pointCount">0</strong>
             </div>
             <div class="stat-card">
-                <span>STATUS GPS</span>
+                <span>STATUS</span>
                 <strong id="gpsStatus">Standby</strong>
             </div>
         </div>
 
         <div class="btn-group">
-            <button id="btnStart" class="btn-start" onclick="startTracking()">Mulai GPS</button>
+            <button id="btnStart" class="btn-start" onclick="startTracking()">Mulai GPS Realtime</button>
             <button id="btnStop" class="btn-stop" onclick="stopTracking()" disabled>Hentikan</button>
             <button id="btnFix" class="btn-fix" onclick="fixTrajectoryData()">Perbaiki Glitch</button>
-            <button class="btn-sim" onclick="simulateMovement()">Simulasi Bergerak</button>
         </div>
     </div>
 
@@ -62,46 +64,42 @@
         let map;
         let watchId = null;
         let rawPoints = [];
-        let validPoints = [];
         let polylineLayer;
         let currentMarker;
+        let accuracyCircle;
 
         function initMap() {
-            // Default center ke Medan, Sumatera Utara
-            map = L.map('map').setView([3.5952, 98.6722], 14);
+            // Inisialisasi peta awal
+            map = L.map('map').setView([-3.5952, 98.6722], 16);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
             }).addTo(map);
 
             polylineLayer = L.polyline([], { color: '#3498db', weight: 5, opacity: 0.8 }).addTo(map);
         }
 
-        function logError(msg) {
-            document.getElementById('errorLog').innerText = msg;
-            console.error(msg);
-        }
-
         function startTracking() {
-            logError(""); // Bersihkan error log
+            document.getElementById('errorLog').innerText = "";
 
             if (!navigator.geolocation) {
-                logError("Browser Anda tidak mendukung Geolocation.");
+                alert("Browser tidak mendukung Geolocation.");
                 return;
             }
 
             document.getElementById('btnStart').disabled = true;
             document.getElementById('btnStop').disabled = false;
-            document.getElementById('gpsStatus').innerText = "Menunggu Sinyal...";
+            document.getElementById('gpsStatus').innerText = "Mencari GPS...";
             document.getElementById('gpsStatus').style.color = "#e67e22";
 
+            // Konfigurasi Presisi Tinggi Real-Time
             const options = {
-                enableHighAccuracy: true,
-                timeout: 20000,
-                maximumAge: 0
+                enableHighAccuracy: true, // Paksa gunakan Hardware GPS
+                timeout: 10000,           // Batas tunggu sinyal 10 detik
+                maximumAge: 0             // JANGAN gunakan cache, ambil data detik ini juga!
             };
 
-            // Gunakan watchPosition untuk melacak terus menerus
             watchId = navigator.geolocation.watchPosition(
                 onLocationSuccess,
                 onLocationError,
@@ -112,46 +110,77 @@
         function onLocationSuccess(position) {
             const lat = position.coords.latitude;
             const lon = position.coords.longitude;
+            const accuracy = position.coords.accuracy; // Akurasi dalam meter
             const timestamp = Date.now();
 
-            logError(""); // Clear error jika sukses
             document.getElementById('gpsStatus').innerText = "Aktif";
             document.getElementById('gpsStatus').style.color = "#2ecc71";
+            document.getElementById('gpsAccuracy').innerText = Math.round(accuracy) + " m";
 
-            const newPoint = { lat, lon, timestamp };
+            // Abaikan titik jika akurasi GPS terlalu buruk (> 50 meter)
+            if (accuracy > 50) {
+                console.warn("Akurasi sinyal buruk (" + accuracy + "m), lewati titik ini.");
+                return;
+            }
+
+            // Filter pergerakan minimum: Cegah titik bertumpuk jika tidak bergerak
+            if (rawPoints.length > 0) {
+                const lastPoint = rawPoints[rawPoints.length - 1];
+                const moveDistance = calculateHaversineDistance(lastPoint.lat, lastPoint.lon, lat, lon) * 1000; // Ubah ke meter
+                
+                // Jika berpindah kurang dari 3 meter, dianggap diam (noise reduction)
+                if (moveDistance < 3) {
+                    // Cukup perbarui posisi marker & akurasi tanpa menambah titik linimasa baru
+                    updateMapMarker(lat, lon, accuracy);
+                    return;
+                }
+            }
+
+            // Tambahkan titik valid ke array
+            const newPoint = { lat, lon, timestamp, accuracy };
             rawPoints.push(newPoint);
 
+            updateMapMarker(lat, lon, accuracy);
+            renderPolylineAndDistance(rawPoints);
+            
+            // Auto-follow: Geser pandangan peta ke lokasi terkini
+            map.panTo([lat, lon]);
+            
+            document.getElementById('pointCount').innerText = rawPoints.length;
+        }
+
+        function updateMapMarker(lat, lon, accuracy) {
+            // Update Marker Titik Terkini
             if (currentMarker) {
                 currentMarker.setLatLng([lat, lon]);
             } else {
                 currentMarker = L.marker([lat, lon]).addTo(map);
-                map.setView([lat, lon], 16);
             }
 
-            renderPolylineAndDistance(rawPoints);
-            document.getElementById('pointCount').innerText = rawPoints.length;
+            // Update Lingkaran Radius Akurasi GPS
+            if (accuracyCircle) {
+                accuracyCircle.setLatLng([lat, lon]);
+                accuracyCircle.setRadius(accuracy);
+            } else {
+                accuracyCircle = L.circle([lat, lon], {
+                    radius: accuracy,
+                    color: '#130f40',
+                    fillColor: '#3498db',
+                    fillOpacity: 0.15
+                }).addTo(map);
+            }
         }
 
         function onLocationError(error) {
             let errorMsg = "Gagal membaca GPS: ";
             switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    errorMsg += "Izin lokasi ditolak oleh pengguna.";
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    errorMsg += "Informasi lokasi tidak tersedia (Cek GPS HP).";
-                    break;
-                case error.TIMEOUT:
-                    errorMsg += "Waktu permintaan lokasi habis (Timeout).";
-                    break;
-                default:
-                    errorMsg += error.message;
-                    break;
+                case error.PERMISSION_DENIED: errorMsg += "Izin lokasi ditolak."; break;
+                case error.POSITION_UNAVAILABLE: errorMsg += "Sinyal GPS tidak tersedia."; break;
+                case error.TIMEOUT: errorMsg += "Sinyal GPS Waktu Habis (Timeout)."; break;
             }
-            logError(errorMsg);
-            document.getElementById('gpsStatus').innerText = "Gagal";
+            document.getElementById('errorLog').innerText = errorMsg;
+            document.getElementById('gpsStatus').innerText = "Error";
             document.getElementById('gpsStatus').style.color = "#e74c3c";
-            stopTracking();
         }
 
         function stopTracking() {
@@ -162,14 +191,12 @@
 
             document.getElementById('btnStart').disabled = false;
             document.getElementById('btnStop').disabled = true;
-            if (document.getElementById('gpsStatus').innerText !== "Gagal") {
-                document.getElementById('gpsStatus').innerText = "Dihentikan";
-                document.getElementById('gpsStatus').style.color = "#e74c3c";
-            }
+            document.getElementById('gpsStatus').innerText = "Dihentikan";
+            document.getElementById('gpsStatus').style.color = "#e74c3c";
         }
 
         function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371;
+            const R = 6371; // KM
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -195,55 +222,25 @@
 
         function fixTrajectoryData() {
             if (rawPoints.length < 2) {
-                alert("Butuh minimal 2 titik data.");
+                alert("Membutuhkan minimal 2 titik data.");
                 return;
             }
-            validPoints = [rawPoints[0]];
+            let validPoints = [rawPoints[0]];
             for (let i = 1; i < rawPoints.length; i++) {
                 const prev = validPoints[validPoints.length - 1];
                 const curr = rawPoints[i];
                 const dist = calculateHaversineDistance(prev.lat, prev.lon, curr.lat, curr.lon);
                 const timeSec = (curr.timestamp - prev.timestamp) / 1000;
-                const speed = timeSec > 0 ? (dist / (timeSec / 3600)) : 0;
+                const speedKmh = timeSec > 0 ? (dist / (timeSec / 3600)) : 0;
 
-                if (speed <= 150) {
+                // Batas kecepatan wajar pergerakan darat (<= 120 km/jam)
+                if (speedKmh <= 120) {
                     validPoints.push(curr);
                 }
             }
             polylineLayer.setStyle({ color: '#2ecc71', weight: 5 });
             renderPolylineAndDistance(validPoints);
-            alert(`Berhasil membersihkan glitch! Sisa titik valid: ${validPoints.length}`);
-        }
-
-        // Fitur Simulasi jika GPS HP Anda bermasalah / sedang diuji di PC/Laptop
-        function simulateMovement() {
-            let baseLat = 3.5952;
-            let baseLon = 98.6722;
-            
-            // Masukkan beberapa titik simulasi berjalan di sekitar Medan
-            const fakePoints = [
-                { lat: baseLat, lon: baseLon, timestamp: Date.now() },
-                { lat: baseLat + 0.002, lon: baseLon + 0.002, timestamp: Date.now() + 5000 },
-                { lat: baseLat + 0.004, lon: baseLon + 0.005, timestamp: Date.now() + 10000 },
-                { lat: baseLat + 0.006, lon: baseLon + 0.008, timestamp: Date.now() + 15000 },
-            ];
-
-            fakePoints.forEach((pt, index) => {
-                setTimeout(() => {
-                    rawPoints.push(pt);
-                    if (currentMarker) {
-                        currentMarker.setLatLng([pt.loc, pt.lon]); // fixed prop
-                        currentMarker.setLatLng([pt.lat, pt.lon]);
-                    } else {
-                        currentMarker = L.marker([pt.lat, pt.lon]).addTo(map);
-                    }
-                    map.setView([pt.lat, pt.lon], 15);
-                    renderPolylineAndDistance(rawPoints);
-                    document.getElementById('pointCount').innerText = rawPoints.length;
-                    document.getElementById('gpsStatus').innerText = "Simulasi Aktif";
-                    document.getElementById('gpsStatus').style.color = "#9b59b6";
-                }, index * 1500);
-            });
+            alert(`Pembersihan selesai! Menghapus titik loncatan palsu.`);
         }
 
         window.onload = initMap;
