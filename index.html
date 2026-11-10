@@ -3,55 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Timeline & Find Me Tracker</title>
+    <title>GPS Timeline & History Tracker</title>
     
     <!-- Leaflet.js CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- FontAwesome untuk ikon tombol -->
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, sans-serif; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { display: flex; flex-direction: column; height: 100vh; background-color: #0f172a; overflow: hidden; }
         
         #map { flex: 1; width: 100%; z-index: 1; }
 
-        /* Floating Modern Control Panel */
         .control-panel {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             width: 92%;
-            max-width: 450px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 16px;
+            max-width: 480px;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(12px);
+            padding: 14px;
             border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
+            gap: 6px;
             text-align: center;
         }
 
         .stat-card {
             background: #f1f5f9;
-            padding: 8px 4px;
-            border-radius: 10px;
+            padding: 6px 2px;
+            border-radius: 8px;
             border: 1px solid #e2e8f0;
         }
 
         .stat-card span {
             display: block;
-            font-size: 9px;
+            font-size: 8px;
             color: #64748b;
             font-weight: 700;
             letter-spacing: 0.5px;
@@ -59,51 +58,67 @@
         }
 
         .stat-card strong {
-            font-size: 13px;
+            font-size: 12px;
             color: #1e293b;
+        }
+
+        .history-selector {
+            display: flex;
+            gap: 6px;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .history-selector button {
+            flex: 1;
+            padding: 6px;
+            font-size: 11px;
+            background: transparent;
+            color: #475569;
+            border-radius: 6px;
+        }
+
+        .history-selector button.active {
+            background: #ffffff;
+            color: #0f172a;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
         .btn-group {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 8px;
+            gap: 6px;
         }
 
         .btn-row-full {
             display: flex;
-            gap: 8px;
+            gap: 6px;
         }
 
         button {
-            padding: 11px;
+            padding: 10px;
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 12px;
             cursor: pointer;
             transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 5px;
         }
 
         button:active { transform: scale(0.97); }
 
         .btn-start { background: #10b981; color: white; }
-        .btn-start:hover { background: #059669; }
-
         .btn-stop { background: #ef4444; color: white; }
-        .btn-stop:hover { background: #dc2626; }
-
         .btn-fix { background: #3b82f6; color: white; }
-        .btn-fix:hover { background: #2563eb; }
-
         .btn-find { background: #8b5cf6; color: white; }
-        .btn-find:hover { background: #7c3aed; }
 
-        button:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; transform: none; }
-
+        button:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
         #errorLog { color: #ef4444; font-size: 11px; text-align: center; font-weight: bold; }
     </style>
 </head>
@@ -133,13 +148,19 @@
             </div>
         </div>
 
+        <!-- Tombol Pilihan Tanggal Linimasa -->
+        <div class="history-selector">
+            <button id="tabToday" class="active" onclick="switchView('today')">Hari Ini</button>
+            <button id="tabYesterday" onclick="switchView('yesterday')">Kemarin</button>
+        </div>
+
         <div class="btn-group">
             <button id="btnStart" class="btn-start" onclick="startTracking()"><i class="fa-solid fa-play"></i> Mulai</button>
             <button id="btnStop" class="btn-stop" onclick="stopTracking()" disabled><i class="fa-solid fa-stop"></i> Berhenti</button>
         </div>
 
         <div class="btn-row-full">
-            <button class="btn-find" onclick="findMe()"><i class="fa-solid fa-crosshairs"></i> Cari Saya (Find Me)</button>
+            <button class="btn-find" onclick="findMe()"><i class="fa-solid fa-crosshairs"></i> Cari Saya</button>
             <button class="btn-fix" onclick="fixTrajectoryData()"><i class="fa-solid fa-wand-magic-sparkles"></i> Perbaiki Glitch</button>
         </div>
     </div>
@@ -150,17 +171,17 @@
     <script>
         let map;
         let watchId = null;
-        let rawPoints = [];
-        let polylineLayer;
-        let currentMarker;
-        let accuracyCircle;
-        let latestCoords = null; // Menyimpan posisi terakhir untuk fitur Find Me
+        let currentView = 'today'; // 'today' atau 'yesterday'
+        
+        let todayPoints = [];
+        let yesterdayPoints = [];
+        
+        let polylineToday, polylineYesterday;
+        let currentMarker, accuracyCircle;
+        let latestCoords = null;
 
         function initMap() {
-            // Default center awal ke Medan, Sumatera Utara
             map = L.map('map', { zoomControl: false }).setView([3.5952, 98.6722], 16);
-
-            // Pindahkan posisi kontrol zoom ke kanan atas agar bersih
             L.control.zoom({ position: 'topright' }).addTo(map);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -168,12 +189,63 @@
                 maxZoom: 19
             }).addTo(map);
 
-            polylineLayer = L.polyline([], { color: '#3b82f6', weight: 5, opacity: 0.8 }).addTo(map);
+            // Inisialisasi layer garis: Hari ini (Biru), Kemarin (Ungu transparan)
+            polylineToday = L.polyline([], { color: '#3b82f6', weight: 5, opacity: 0.9 }).addTo(map);
+            polylineYesterday = L.polyline([], { color: '#9333ea', weight: 4, opacity: 0.5, dashArray: '5, 5' }).addTo(map);
+
+            loadDataFromStorage();
+            renderCurrentView();
+        }
+
+        // Format tanggal string (YYYY-MM-DD)
+        function getDateKey(date = new Date()) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function getYesterdayKey() {
+            let d = new Date();
+            d.setDate(d.getDate() - 1);
+            return getDateKey(d);
+        }
+
+        // Muat data dari localStorage
+        function loadDataFromStorage() {
+            const todayKey = 'gps_' + getDateKey();
+            const yestKey = 'gps_' + getYesterdayKey();
+
+            const savedToday = localStorage.getItem(todayKey);
+            const savedYest = localStorage.getItem(yestKey);
+
+            todayPoints = savedToday ? JSON.parse(savedToday) : [];
+            yesterdayPoints = savedYest ? JSON.parse(savedYest) : [];
+        }
+
+        function saveDataToStorage() {
+            const todayKey = 'gps_' + getDateKey();
+            localStorage.setItem(todayKey, JSON.stringify(todayPoints));
+        }
+
+        function switchView(view) {
+            currentView = view;
+            document.getElementById('tabToday').classList.toggle('active', view === 'today');
+            document.getElementById('tabYesterday').classList.toggle('active', view === 'yesterday');
+            renderCurrentView();
+        }
+
+        function renderCurrentView() {
+            if (currentView === 'today') {
+                polylineToday.addTo(map);
+                // Sembunyikan garis kemarin jika ingin fokus, atau tampilkan bersamaan
+                renderPolylineAndDistance(todayPoints, '#3b82f6');
+                document.getElementById('pointCount').innerText = todayPoints.length;
+            } else {
+                renderPolylineAndDistance(yesterdayPoints, '#9333ea');
+                document.getElementById('pointCount').innerText = yesterdayPoints.length + " (Kemarin)";
+            }
         }
 
         function startTracking() {
             document.getElementById('errorLog').innerText = "";
-
             if (!navigator.geolocation) {
                 alert("Browser tidak mendukung Geolocation.");
                 return;
@@ -184,17 +256,8 @@
             document.getElementById('gpsStatus').innerText = "Mencari...";
             document.getElementById('gpsStatus').style.color = "#f59e0b";
 
-            const options = {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            };
-
-            watchId = navigator.geolocation.watchPosition(
-                onLocationSuccess,
-                onLocationError,
-                options
-            );
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+            watchId = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, options);
         }
 
         function onLocationSuccess(position) {
@@ -203,19 +266,16 @@
             const accuracy = position.coords.accuracy;
             const timestamp = Date.now();
 
-            latestCoords = { lat, lon }; // Update koordinat terkini
+            latestCoords = { lat, lon };
 
             document.getElementById('gpsStatus').innerText = "Aktif";
             document.getElementById('gpsStatus').style.color = "#10b981";
             document.getElementById('gpsAccuracy').innerText = Math.round(accuracy) + " m";
 
-            if (accuracy > 50) {
-                console.warn("Akurasi buruk (" + accuracy + "m), lewati.");
-                return;
-            }
+            if (accuracy > 50) return;
 
-            if (rawPoints.length > 0) {
-                const last = rawPoints[rawPoints.length - 1];
+            if (todayPoints.length > 0) {
+                const last = todayPoints[todayPoints.length - 1];
                 const moveDist = calculateHaversineDistance(last.lat, last.lon, lat, lon) * 1000;
                 if (moveDist < 3) {
                     updateMapMarker(lat, lon, accuracy);
@@ -224,22 +284,27 @@
             }
 
             const newPoint = { lat, lon, timestamp, accuracy };
-            rawPoints.push(newPoint);
+            todayPoints.push(newPoint);
+            saveDataToStorage();
 
             updateMapMarker(lat, lon, accuracy);
-            renderPolylineAndDistance(rawPoints);
             
-            // Auto pan ke posisi terkini
+            if (currentView === 'today') {
+                renderPolylineAndDistance(todayPoints, '#3b82f6');
+                document.getElementById('pointCount').innerText = todayPoints.length;
+            }
+
             map.panTo([lat, lon]);
-            document.getElementById('pointCount').innerText = rawPoints.length;
         }
 
-        // Fitur "Cari Saya" (Find Me) - Memusatkan peta ke lokasi terkini pengguna secara manual
         function findMe() {
             if (latestCoords) {
                 map.setView([latestCoords.lat, latestCoords.lon], 18, { animate: true });
+            } else if (todayPoints.length > 0) {
+                const last = todayPoints[todayPoints.length - 1];
+                map.setView([last.lat, last.lon], 18, { animate: true });
             } else {
-                alert("Lokasi terkini belum ditemukan. Pastikan GPS sudah dimulai!");
+                alert("Belum ada data koordinat.");
             }
         }
 
@@ -264,13 +329,7 @@
         }
 
         function onLocationError(error) {
-            let msg = "GPS Error: ";
-            switch(error.code) {
-                case error.PERMISSION_DENIED: msg += "Izin ditolak."; break;
-                case error.POSITION_UNAVAILABLE: msg += "Sinyal tidak tersedia."; break;
-                case error.TIMEOUT: msg += "Waktu habis."; break;
-            }
-            document.getElementById('errorLog').innerText = msg;
+            document.getElementById('errorLog').innerText = "GPS Error: " + error.message;
             document.getElementById('gpsStatus').innerText = "Gagal";
             document.getElementById('gpsStatus').style.color = "#ef4444";
         }
@@ -296,9 +355,16 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
         }
 
-        function renderPolylineAndDistance(pointsArray) {
+        function renderPolylineAndDistance(pointsArray, color) {
             const latLngs = pointsArray.map(p => [p.lat, p.lon]);
-            polylineLayer.setLatLngs(latLngs);
+            
+            if (currentView === 'today') {
+                polylineToday.setLatLngs(latLngs);
+                polylineToday.setStyle({ color: color });
+            } else {
+                polylineYesterday.setLatLngs(latLngs);
+                polylineYesterday.setStyle({ color: color });
+            }
 
             let totalDist = 0;
             for (let i = 0; i < pointsArray.length - 1; i++) {
@@ -311,14 +377,16 @@
         }
 
         function fixTrajectoryData() {
-            if (rawPoints.length < 2) {
-                alert("Minimal butuh 2 titik data untuk membersihkan glitch.");
+            let targetPoints = currentView === 'today' ? todayPoints : yesterdayPoints;
+            if (targetPoints.length < 2) {
+                alert("Minimal butuh 2 titik untuk perbaikan.");
                 return;
             }
-            let validPoints = [rawPoints[0]];
-            for (let i = 1; i < rawPoints.length; i++) {
+            
+            let validPoints = [targetPoints[0]];
+            for (let i = 1; i < targetPoints.length; i++) {
                 const prev = validPoints[validPoints.length - 1];
-                const curr = rawPoints[i];
+                const curr = targetPoints[i];
                 const dist = calculateHaversineDistance(prev.lat, prev.lon, curr.lat, curr.lon);
                 const timeSec = (curr.timestamp - prev.timestamp) / 1000;
                 const speedKmh = timeSec > 0 ? (dist / (timeSec / 3600)) : 0;
@@ -327,9 +395,16 @@
                     validPoints.push(curr);
                 }
             }
-            polylineLayer.setStyle({ color: '#10b981', weight: 5 });
-            renderPolylineAndDistance(validPoints);
-            alert("Berhasil membersihkan loncatan GPS (glitch)!");
+
+            if (currentView === 'today') {
+                todayPoints = validPoints;
+                saveDataToStorage();
+                renderPolylineAndDistance(todayPoints, '#10b981');
+            } else {
+                yesterdayPoints = validPoints;
+                renderPolylineAndDistance(yesterdayPoints, '#10b981');
+            }
+            alert("Glitch berhasil dibersihkan untuk linimasa " + currentView + "!");
         }
 
         window.onload = initMap;
